@@ -24,4 +24,5 @@ This is a fork of sbsigntools to fix issues preventing the use of the tools -- p
 To sign a Linux kernel using a key stored in AWS CloudHSM:
 
 A. Generate a PKI suitable for UEFI code signing as usual using the openssl commands, but be sure to add the switch: -engine cloudhsm
-B. Specify the new switch --keyform that this fork adds when using sbsign: sbsign --engine cloudhsm --key <keyfile> --keyform PEM --cert <cert> <kernelfile>
+
+B. Specify the new switch --keyform that this fork adds when using sbsign: sbsign --engine cloudhsm --key \<keyfile\> --keyform PEM --cert \<cert\> \<kernelfile\>
