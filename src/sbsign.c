@@ -70,6 +70,7 @@ static struct option options[] = {
 	{ "output", required_argument, NULL, 'o' },
 	{ "cert", required_argument, NULL, 'c' },
 	{ "key", required_argument, NULL, 'k' },
+	{ "keyform", required_argument, NULL, 'f' },
 	{ "detached", no_argument, NULL, 'd' },
 	{ "verbose", no_argument, NULL, 'v' },
 	{ "help", no_argument, NULL, 'h' },
@@ -84,16 +85,17 @@ static void usage(void)
 			"<efi-boot-image>\n"
 		"Sign an EFI boot image for use with secure boot.\n\n"
 		"Options:\n"
-		"\t--engine <eng>     use the specified engine to load the key\n"
-		"\t--key <keyfile>    signing key (PEM-encoded RSA "
+		"\t--engine <eng>          use the specified engine to load the key\n"
+		"\t--key <keyfile>         signing key (PEM-encoded RSA "
 						"private key)\n"
-		"\t--cert <certfile>  certificate (x509 certificate)\n"
-		"\t--detached         write a detached signature, instead of\n"
-		"\t                    a signed binary\n"
-		"\t--output <file>    write signed data to <file>\n"
-		"\t                    (default <efi-boot-image>.signed,\n"
-		"\t                    or <efi-boot-image>.pk7 for detached\n"
-		"\t                    signatures)\n",
+		"\t--keyform <PEM|ENGINE>  specify the form of the key  in keyfile\n" 
+		"\t--cert <certfile>       certificate (x509 certificate)\n"
+		"\t--detached              write a detached signature, instead of\n"
+		"\t                         a signed binary\n"
+		"\t--output <file>         write signed data to <file>\n"
+		"\t                         (default <efi-boot-image>.signed,\n"
+		"\t                         or <efi-boot-image>.pk7 for detached\n"
+		"\t                         signatures)\n",
 		toolname);
 }
 
@@ -114,7 +116,10 @@ static void set_default_outfilename(struct sign_context *ctx)
 
 int main(int argc, char **argv)
 {
-	const char *keyfilename, *certfilename, *engine;
+	const char *keyfilename, *keyformname, *certfilename, *engine;
+	uint8_t keyform;
+	ENGINE* e;
+	UI_METHOD *ui;
 	struct sign_context *ctx;
 	uint8_t *buf, *tmp;
 	int rc, c, sigsize;
@@ -123,12 +128,15 @@ int main(int argc, char **argv)
 	ctx = talloc_zero(NULL, struct sign_context);
 
 	keyfilename = NULL;
+	keyform = KEYFORM_PEM;
 	certfilename = NULL;
 	engine = NULL;
+	e = NULL;
+	ui = NULL;
 
 	for (;;) {
 		int idx;
-		c = getopt_long(argc, argv, "o:c:k:dvVhe:", options, &idx);
+		c = getopt_long(argc, argv, "o:c:k:f:dvVhe:", options, &idx);
 		if (c == -1)
 			break;
 
@@ -141,6 +149,9 @@ int main(int argc, char **argv)
 			break;
 		case 'k':
 			keyfilename = optarg;
+			break;
+		case 'f':
+			keyformname = optarg;
 			break;
 		case 'd':
 			ctx->detached = 1;
@@ -182,6 +193,26 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
+	if (keyformname) {
+		if (strcmp(keyformname, "PEM") == 0) {
+			keyform = KEYFORM_PEM;
+		} else if (strcmp(keyformname, "ENGINE") == 0) {
+			if (!engine) {
+				fprintf(stderr, 
+					"error: Specified keyform as engine but no engine specified\n");
+				usage();
+				return EXIT_FAILURE;
+			}
+
+			keyform = KEYFORM_ENGINE;
+		} else {
+			fprintf(stderr,
+				"error: Unrecognized keyform, use PEM or ENGINE\n");
+			usage();
+			return EXIT_FAILURE;
+		}
+	}
+
 	ctx->image = image_load(ctx->infilename);
 	if (!ctx->image)
 		return EXIT_FAILURE;
@@ -197,9 +228,13 @@ int main(int argc, char **argv)
 	 * module isn't present).  In either case ignore the errors
 	 * (malloc will cause other failures out lower down */
 	ERR_clear_error();
-	if (engine)
-		pkey = fileio_read_engine_key(engine, keyfilename);
-	else
+	if (engine) {
+		e = setup_engine(engine, ui);
+		if (!e) 
+			return EXIT_FAILURE;
+
+		pkey = fileio_read_engine_key(e, keyfilename, keyform, ui);
+	} else
 		pkey = fileio_read_pkey(keyfilename);
 	if (!pkey)
 		return EXIT_FAILURE;
@@ -247,6 +282,11 @@ int main(int argc, char **argv)
 		image_write(ctx->image, ctx->outfilename);
 
 	talloc_free(ctx);
+
+	if (e) {
+		ENGINE_finish(e);
+		ENGINE_free(e);
+	}
 
 	return EXIT_SUCCESS;
 }

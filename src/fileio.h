@@ -34,11 +34,16 @@
 
 #include <stdint.h>
 
+#include <openssl/engine.h>
 #include <openssl/evp.h>
 #include <openssl/x509.h>
 
+#define KEYFORM_PEM	1
+#define KEYFORM_ENGINE	2
+
+ENGINE *setup_engine(const char* engine, UI_METHOD *ui);
 EVP_PKEY *fileio_read_pkey(const char *filename);
-EVP_PKEY *fileio_read_engine_key(const char *engine, const char *filename);
+EVP_PKEY *fileio_read_engine_key(ENGINE *e, const char *filename, const uint8_t keyform, UI_METHOD *ui);
 X509 *fileio_read_cert(const char *filename);
 
 int fileio_read_file(void *ctx, const char *filename,

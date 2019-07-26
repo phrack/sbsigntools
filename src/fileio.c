@@ -39,7 +39,6 @@
 #include <openssl/bio.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
-#include <openssl/engine.h>
 
 #include <ccan/talloc/talloc.h>
 #include <ccan/read_write_all/read_write_all.h>
@@ -60,13 +59,10 @@ static int ui_read(UI *ui, UI_STRING *uis)
 	return 1;
 }
 
-EVP_PKEY *fileio_read_engine_key(const char *engine, const char *filename)
+ENGINE *setup_engine(const char* engine, UI_METHOD *ui) 
 {
-	UI_METHOD *ui;
 	ENGINE *e;
-	EVP_PKEY *pkey = NULL;
-
-	ENGINE_load_builtin_engines();
+	ENGINE_load_dynamic();
 	e = ENGINE_by_id(engine);
 
 	if (!e) {
@@ -79,21 +75,39 @@ EVP_PKEY *fileio_read_engine_key(const char *engine, const char *filename)
 	if (!ui) {
 		fprintf(stderr, "Failed to create UI method\n");
 		ERR_print_errors_fp(stderr);
-		goto out_free;
+		ENGINE_free(e);
+		return NULL;
 	}
 	UI_method_set_reader(ui, ui_read);
 
-	if (!ENGINE_init(e)) {
-		fprintf(stderr, "Failed to initialize engine %s\n", engine);
-		ERR_print_errors_fp(stderr);
-		goto out_free;
+	ENGINE_ctrl_cmd(e, "SET_USER_INTERFACE", 0, ui,
+	                0, 1);
+
+	if (!ENGINE_set_default(e, ENGINE_METHOD_ALL)) {
+	    fprintf(stderr, "can't use that engine\n");
+	    ERR_print_errors_fp(stderr);
+	    ENGINE_free(e);
+	    return NULL;
 	}
 
-	pkey = ENGINE_load_private_key(e, filename, ui, NULL);
-	ENGINE_finish(e);
+	return e;
+}
 
- out_free:
-	ENGINE_free(e);
+EVP_PKEY *fileio_read_engine_key(ENGINE *e, const char *filename, const uint8_t keyform, UI_METHOD *ui)
+{	
+	EVP_PKEY *pkey = NULL;
+
+	if (keyform == KEYFORM_PEM) {
+		// Some HSMs use a safety key where a fake key is stored in a PEM file
+		// and this key is mapped to the real key in the HSM
+		pkey = fileio_read_pkey(filename);
+	} else if (keyform == KEYFORM_ENGINE) {
+		pkey = ENGINE_load_private_key(e, filename, ui, NULL);
+	} else {
+		fprintf(stderr, "Unrecognized keyform\n");
+		ERR_print_errors_fp(stderr);
+	}
+
 	return pkey;
 }
 
