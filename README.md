@@ -9,7 +9,7 @@ sbsigntool - Signing utility for UEFI secure boot
 See file ./INSTALL for building and installation instructions.
 
 Main git repository:
-  git://kernel.ubuntu.com/jk/sbsigntool.git
+  https://git.kernel.org/pub/scm/linux/kernel/git/jejb/sbsigntools.git/
 
 sbsigntool is free software.  See the file COPYING for copying conditions.
 
