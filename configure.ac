@@ -1,4 +1,4 @@
-AC_INIT([sbsigntool], [0.9.2], [James.Bottomley@HansenPartnership.com])
+AC_INIT([sbsigntool], [0.9.4], [James.Bottomley@HansenPartnership.com])
 
 AM_INIT_AUTOMAKE()
 

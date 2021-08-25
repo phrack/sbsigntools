@@ -54,9 +54,11 @@
 #include "fileio.h"
 #include "efivars.h"
 
+static struct statfs statfstype;
+
 #define EFIVARS_MOUNTPOINT	"/sys/firmware/efi/efivars"
-#define PSTORE_FSTYPE		0x6165676C
-#define EFIVARS_FSTYPE		0xde5e81e4
+#define PSTORE_FSTYPE		((typeof(statfstype.f_type))0x6165676C)
+#define EFIVARS_FSTYPE		((typeof(statfstype.f_type))0xde5e81e4)
 
 #define EFI_IMAGE_SECURITY_DATABASE_GUID \
 	{ 0xd719b2cb, 0x3d3a, 0x4596, \
@@ -208,7 +210,11 @@ static int x509_key_parse(struct key *key, uint8_t *data, size_t len)
 		goto out;
 
 	key->id_len = ASN1_STRING_length(serial);
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	key->id = talloc_memdup(key, ASN1_STRING_data(serial), key->id_len);
+#else
+	key->id = talloc_memdup(key, ASN1_STRING_get0_data(serial), key->id_len);
+#endif
 
 	key->description = talloc_array(key, char, description_len);
 	X509_NAME_oneline(X509_get_subject_name(x509),
@@ -883,10 +889,12 @@ int main(int argc, char **argv)
 {
 	bool use_default_keystore_dirs;
 	struct sync_context *ctx;
+	int rc;
 
 	use_default_keystore_dirs = true;
 	ctx = talloc_zero(NULL, struct sync_context);
 	list_head_init(&ctx->new_keys);
+	rc = EXIT_SUCCESS;
 
 	for (;;) {
 		int idx, c;
@@ -930,7 +938,11 @@ int main(int argc, char **argv)
 	ERR_load_crypto_strings();
 	OpenSSL_add_all_digests();
 	OpenSSL_add_all_ciphers();
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	OPENSSL_config(NULL);
+#else
+	OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
+#endif
 	/* here we may get highly unlikely failures or we'll get a
 	 * complaint about FIPS signatures (usually becuase the FIPS
 	 * module isn't present).  In either case ignore the errors
@@ -975,10 +987,10 @@ int main(int argc, char **argv)
 	if (ctx->verbose)
 		print_new_keys(ctx);
 
-	if (!ctx->dry_run)
-		insert_new_keys(ctx);
+	if (!ctx->dry_run && insert_new_keys(ctx))
+		rc = EXIT_FAILURE;
 
 	talloc_free(ctx);
 
-	return EXIT_SUCCESS;
+	return rc;
 }

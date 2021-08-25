@@ -162,7 +162,6 @@ static void image_pecoff_update_checksum(struct image *image)
 {
 	bool is_signed = image->sigsize && image->sigbuf;
 	uint32_t checksum;
-	struct cert_table_header *cert_table = image->cert_table;
 
 	/* We carefully only include the signature data in the checksum (and
 	 * in the file length) if we're outputting the signature.  Otherwise,
@@ -180,16 +179,13 @@ static void image_pecoff_update_checksum(struct image *image)
 			(void *)(image->checksum + 1));
 
 	if (is_signed) {
-		checksum = csum_bytes(checksum,
-				cert_table, sizeof(*cert_table));
-
 		checksum = csum_bytes(checksum, image->sigbuf, image->sigsize);
 	}
 
 	checksum += image->data_size;
 
 	if (is_signed)
-		checksum += sizeof(*cert_table) + image->sigsize;
+		checksum += image->sigsize;
 
 	*(image->checksum) = cpu_to_le32(checksum);
 }

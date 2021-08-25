@@ -238,7 +238,11 @@ struct idc *IDC_get(PKCS7 *p7, BIO *bio)
 
 	/* extract the idc from the signed PKCS7 'other' data */
 	str = p7->d.sign->contents->d.other->value.asn1_string;
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	idcbuf = buf = ASN1_STRING_data(str);
+#else
+	idcbuf = buf = ASN1_STRING_get0_data(str);
+#endif
 	idc = d2i_IDC(NULL, &buf, ASN1_STRING_length(str));
 
 	/* If we were passed a BIO, write the idc data, minus type and length,
@@ -289,7 +293,11 @@ int IDC_check_hash(struct idc *idc, struct image *image)
 	}
 
 	/* check hash against the one we calculated from the image */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	buf = ASN1_STRING_data(str);
+#else
+	buf = ASN1_STRING_get0_data(str);
+#endif
 	if (memcmp(buf, sha, sizeof(sha))) {
 		fprintf(stderr, "Hash doesn't match image\n");
 		fprintf(stderr, " got:       %s\n", sha256_str(buf));

@@ -105,7 +105,6 @@ static uint32_t default_attrs = EFI_VARIABLE_NON_VOLATILE |
 static uint32_t attr_invalid = 0xffffffffu;
 static const char *attr_prefix = "EFI_VARIABLE_";
 
-static const EFI_GUID default_guid = EFI_GLOBAL_VARIABLE;
 static const EFI_GUID cert_pkcs7_guid = EFI_CERT_TYPE_PKCS7_GUID;
 
 static void set_default_outfilename(struct varsign_context *ctx)
@@ -212,7 +211,7 @@ static int set_timestamp(EFI_TIME *timestamp)
 	/* copy to our EFI-specific time structure. Other fields (Nanosecond,
 	 * TimeZone, Daylight and Pad) are defined to be zero */
 	memset(timestamp, 0, sizeof(*timestamp));
-	timestamp->Year = tm->tm_year;
+	timestamp->Year = 1900 + tm->tm_year;
 	timestamp->Month = tm->tm_mon;
 	timestamp->Day = tm->tm_mday;
 	timestamp->Hour = tm->tm_hour;
@@ -333,7 +332,7 @@ int write_signed(struct varsign_context *ctx, int include_attrs)
 		printf("Wrote signed data:\n");
 		if (include_attrs) {
 			i = sizeof(ctx->var_attrs);
-			printf("  [%04zx:%04zx] attrs\n", 0l, i);
+			printf("  [%04lx:%04zx] attrs\n", 0l, i);
 		}
 
 		printf("  [%04zx:%04x] authentication descriptor\n",
@@ -517,7 +516,11 @@ int main(int argc, char **argv)
 	OpenSSL_add_all_digests();
 	OpenSSL_add_all_ciphers();
 	ERR_load_crypto_strings();
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	OPENSSL_config(NULL);
+#else
+	OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
+#endif
 	/* here we may get highly unlikely failures or we'll get a
 	 * complaint about FIPS signatures (usually becuase the FIPS
 	 * module isn't present).  In either case ignore the errors
