@@ -233,7 +233,11 @@ int main(int argc, char **argv)
 
 	ERR_load_crypto_strings();
 	OpenSSL_add_all_digests();
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	OPENSSL_config(NULL);
+#else
+	OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
+#endif
 	/* here we may get highly unlikely failures or we'll get a
 	 * complaint about FIPS signatures (usually becuase the FIPS
 	 * module isn't present).  In either case ignore the errors

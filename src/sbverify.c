@@ -210,8 +210,7 @@ static int x509_verify_cb(int status, X509_STORE_CTX *ctx)
 			== XKU_CODE_SIGN)
 		status = 1;
 
-	else if (err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY ||
-		 err == X509_V_ERR_CERT_UNTRUSTED ||
+	else if (err == X509_V_ERR_CERT_UNTRUSTED ||
 		 err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT ||
 		 err == X509_V_ERR_UNABLE_TO_VERIFY_LEAF_SIGNATURE) {
 		/* all certs given with the --cert argument are trusted */
@@ -221,6 +220,7 @@ static int x509_verify_cb(int status, X509_STORE_CTX *ctx)
 	} else if (err == X509_V_ERR_CERT_HAS_EXPIRED ||
 		   err == X509_V_ERR_ERROR_IN_CERT_NOT_BEFORE_FIELD ||
 		   err == X509_V_ERR_CERT_NOT_YET_VALID ||
+		   err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY ||
 		   err == X509_V_ERR_ERROR_IN_CERT_NOT_AFTER_FIELD)
 		/* UEFI explicitly allows expired certificates */
 		status = 1;
@@ -239,7 +239,7 @@ int main(int argc, char **argv)
 	uint8_t *sig_buf;
 	size_t sig_size;
 	struct idc *idc;
-	bool verbose;
+	int verbose;
 	BIO *idcbio;
 	PKCS7 *p7;
 	int sig_count = 0;
@@ -247,12 +247,16 @@ int main(int argc, char **argv)
 	status = VERIFY_FAIL;
 	certs = X509_STORE_new();
 	list = 0;
-	verbose = false;
+	verbose = 0;
 	detached_sig_filename = NULL;
 
 	OpenSSL_add_all_digests();
 	ERR_load_crypto_strings();
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	OPENSSL_config(NULL);
+#else
+	OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
+#endif
 	/* here we may get highly unlikely failures or we'll get a
 	 * complaint about FIPS signatures (usually becuase the FIPS
 	 * module isn't present).  In either case ignore the errors
@@ -278,7 +282,7 @@ int main(int argc, char **argv)
 			list = 1;
 			break;
 		case 'v':
-			verbose = true;
+			verbose++;
 			break;
 		case 'V':
 			version();
@@ -333,7 +337,8 @@ int main(int argc, char **argv)
 
 		if (verbose || list) {
 			print_signature_info(p7);
-			//print_certificate_store_certs(certs);
+			if (verbose > 1)
+				print_certificate_store_certs(certs);
 		}
 
 		if (list)

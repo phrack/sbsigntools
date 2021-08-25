@@ -11,8 +11,12 @@ sbattach=$bindir/sbattach
 
 key="$datadir/private-key.rsa"
 cert="$datadir/public-cert.pem"
+intkey="$datadir/int-key.ec"
+intcert="$datadir/int-cert.pem"
+cakey="$datadir/ca-key.ec"
+cacert="$datadir/ca-cert.pem"
 
-export basedir datadir bindir sbsign sbverify sbattach key cert
+export basedir datadir bindir sbsign sbverify sbattach key cert intkey intcert cakey cacert
 
 # 'test' needs to be an absolute path, as we will cd to a temporary
 # directory before running the test

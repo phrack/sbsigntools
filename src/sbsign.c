@@ -49,6 +49,8 @@
 #include <openssl/evp.h>
 #include <openssl/asn1.h>
 #include <openssl/asn1t.h>
+#include <openssl/bio.h>
+#include <openssl/x509.h>
 
 #include <ccan/talloc/talloc.h>
 
@@ -76,6 +78,7 @@ static struct option options[] = {
 	{ "help", no_argument, NULL, 'h' },
 	{ "version", no_argument, NULL, 'V' },
 	{ "engine", required_argument, NULL, 'e'},
+	{ "addcert", required_argument, NULL, 'a'},
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -89,13 +92,14 @@ static void usage(void)
 		"\t--key <keyfile>         signing key (PEM-encoded RSA "
 						"private key)\n"
 		"\t--keyform <PEM|ENGINE>  specify the form of the key  in keyfile\n" 
-		"\t--cert <certfile>       certificate (x509 certificate)\n"
-		"\t--detached              write a detached signature, instead of\n"
-		"\t                         a signed binary\n"
-		"\t--output <file>         write signed data to <file>\n"
-		"\t                         (default <efi-boot-image>.signed,\n"
-		"\t                         or <efi-boot-image>.pk7 for detached\n"
-		"\t                         signatures)\n",
+		"\t--cert <certfile>  certificate (x509 certificate)\n"
+		"\t--addcert <addcertfile> additional intermediate certificates in a file\n"
+		"\t--detached         write a detached signature, instead of\n"
+		"\t                    a signed binary\n"
+		"\t--output <file>    write signed data to <file>\n"
+		"\t                    (default <efi-boot-image>.signed,\n"
+		"\t                    or <efi-boot-image>.pk7 for detached\n"
+		"\t                    signatures)\n",
 		toolname);
 }
 
@@ -114,9 +118,43 @@ static void set_default_outfilename(struct sign_context *ctx)
 			ctx->infilename, extension);
 }
 
+static int add_intermediate_certs(PKCS7 *p7, const char *filename)
+{
+	STACK_OF(X509_INFO) *certs;
+	X509_INFO *cert;
+	BIO *bio = NULL;
+	int i;
+
+	bio = BIO_new(BIO_s_file());
+	if (!bio || BIO_read_filename(bio, filename) <=0) {
+		fprintf(stderr,
+			"error in reading intermediate certificates file\n");
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+
+	certs = PEM_X509_INFO_read_bio(bio, NULL, NULL, NULL);
+	if (!certs) {
+		fprintf(stderr,
+			"error in parsing intermediate certificates file\n");
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+
+	for (i = 0; i < sk_X509_INFO_num(certs); i++) {
+		cert = sk_X509_INFO_value(certs, i);
+		PKCS7_add_certificate(p7, cert->x509);
+	}
+
+	sk_X509_INFO_pop_free(certs, X509_INFO_free);
+	BIO_free_all(bio);
+
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
-	const char *keyfilename, *keyformname, *certfilename, *engine;
+	const char *keyfilename, *keyformname, *certfilename, *addcertfilename, *engine;
 	uint8_t keyform;
 	ENGINE* e;
 	UI_METHOD *ui;
@@ -130,13 +168,14 @@ int main(int argc, char **argv)
 	keyfilename = NULL;
 	keyform = KEYFORM_PEM;
 	certfilename = NULL;
+	addcertfilename = NULL;
 	engine = NULL;
 	e = NULL;
 	ui = NULL;
 
 	for (;;) {
 		int idx;
-		c = getopt_long(argc, argv, "o:c:k:f:dvVhe:", options, &idx);
+		c = getopt_long(argc, argv, "o:c:k:f:dvVhe:a:", options, &idx);
 		if (c == -1)
 			break;
 
@@ -167,6 +206,9 @@ int main(int argc, char **argv)
 			return EXIT_SUCCESS;
 		case 'e':
 			engine = optarg;
+			break;
+		case 'a':
+			addcertfilename = optarg;
 			break;
 		}
 	}
@@ -220,9 +262,14 @@ int main(int argc, char **argv)
 	talloc_steal(ctx, ctx->image);
 
 	ERR_load_crypto_strings();
+	ERR_load_BIO_strings();
 	OpenSSL_add_all_digests();
 	OpenSSL_add_all_ciphers();
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	OPENSSL_config(NULL);
+#else
+	OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG, NULL);
+#endif
 	/* here we may get highly unlikely failures or we'll get a
 	 * complaint about FIPS signatures (usually becuase the FIPS
 	 * module isn't present).  In either case ignore the errors
@@ -261,6 +308,9 @@ int main(int argc, char **argv)
 
 	rc = IDC_set(p7, si, ctx->image);
 	if (rc)
+		return EXIT_FAILURE;
+
+	if (addcertfilename && add_intermediate_certs(p7, addcertfilename))
 		return EXIT_FAILURE;
 
 	sigsize = i2d_PKCS7(p7, NULL);
